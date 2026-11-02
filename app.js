@@ -2,7 +2,7 @@
 'use strict';
 
 /* 版本自纠：HTML 与 JS 版本不一致（旧缓存混搭）时强制带新参数刷新一次 */
-const APP_VER = '20261102c';
+const APP_VER = '20261102d';
 if (window.__ZX_VER && window.__ZX_VER !== APP_VER && !/__r=/.test(location.search)) {
   location.replace(location.pathname + '?__r=' + Date.now() + location.hash);
 }
@@ -163,7 +163,7 @@ async function route() {
   syncShellNav(hash);
   if (hash.startsWith('#/new/')) return renderNew(hash.slice(6));
   if (hash === '#/home' || hash === '#/') return renderHome();
-  if (hash === '#/mine') return renderMine();
+  if (hash.startsWith('#/mine')) return renderMine(hash);
   if (hash === '#/approve') return renderApprove();
   if (hash === '#/finance') return renderFinance();
   if (hash === '#/params') return renderParams();
@@ -186,6 +186,7 @@ async function boot() {
     if (state.profile) { loadBaseData(); loadModels(); }
   }
   route();
+  checkReturnedAndAlert();
 }
 cloud.auth.onAuthStateChange((event) => {
   if (event === 'SIGNED_OUT') { state.session = null; state.profile = null; location.hash = '#/home'; route(); }
@@ -274,6 +275,7 @@ async function afterLogin() {
   state.profile = rows[0] || null;
   if (state.profile) { loadBaseData(); loadModels(); }
   route();
+  checkReturnedAndAlert();
 }
 
 /* ========== 首次登录：完善资料 ========== */
@@ -1401,16 +1403,26 @@ async function viewImage(path) {
 }
 
 /* ========== 我的记录 ========== */
-async function renderMine() {
+async function renderMine(hash) {
   pageShell('我的记录', '<div class="loading-box">加载中…</div>', { tab: 'mine' });
+  /* 支持深链 #/mine?status=returned&all=1（退回提醒弹窗直达）：all=1 时不过滤月份 */
+  const qs = (hash && hash.includes('?')) ? new URLSearchParams(hash.split('?')[1]) : null;
+  const initStatus = (qs && qs.get('status')) || '';
+  const allMonths = !!(qs && qs.get('all') === '1');
   let rows = [];
   const filterBar = `
     <div class="card" style="margin-bottom:10px">
       <div class="filter-bar" style="margin-bottom:0">
-        <input type="month" id="mn-month" value="${thisMonth()}">
+        <input type="month" id="mn-month" value="${allMonths ? '' : thisMonth()}">
         <select id="mn-type">
           <option value="">全部类型</option>
           ${Object.entries(TYPES).filter(([k]) => k !== 'summary').map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('')}
+        </select>
+        <select id="mn-status">
+          <option value="">全部状态</option>
+          <option value="pending">已提交</option>
+          <option value="accounted">已核算</option>
+          <option value="returned">已退回</option>
         </select>
         <input type="search" id="mn-search" placeholder="搜索学生姓名" style="flex:1;min-width:120px">
       </div>
@@ -1419,7 +1431,10 @@ async function renderMine() {
     <div id="mn-list"></div>`;
   const loadRows = async () => {
     try {
-      rows = unwrap(await db.from('records').select('*').eq('owner_id', state.session.user.id).eq('month', $('#mn-month').value).order('created_at', { ascending: false }).limit(1000)) || [];
+      let q = db.from('records').select('*').eq('owner_id', state.session.user.id);
+      const m = $('#mn-month').value;
+      if (m) q = q.eq('month', m);
+      rows = unwrap(await q.order('created_at', { ascending: false }).limit(1000)) || [];
     } catch (e) { toast('加载失败：' + e.message); rows = []; }
   };
   const bindActions = () => {
@@ -1437,9 +1452,11 @@ async function renderMine() {
   };
   const applyFilters = () => {
     const t = $('#mn-type').value;
+    const st = $('#mn-status').value;
     const q = $('#mn-search').value.trim();
     const list = rows.filter((r) =>
       (!t || r.type === t) &&
+      (!st || r.status === st) &&
       (!q || String((r.payload || {}).student || '').includes(q)));
     $('#mn-count').textContent = `共 ${list.length} 条记录`;
     $('#mn-list').innerHTML = list.length ? list.map((r) => {
@@ -1459,11 +1476,36 @@ async function renderMine() {
     bindActions();
   };
   pageShell('我的记录', filterBar, { tab: 'mine' });
+  if (initStatus) $('#mn-status').value = initStatus;
   ['mn-month'].forEach((id) => $('#' + id).addEventListener('change', async () => { await loadRows(); applyFilters(); }));
-  ['mn-type'].forEach((id) => $('#' + id).addEventListener('change', applyFilters));
+  ['mn-type', 'mn-status'].forEach((id) => $('#' + id).addEventListener('change', applyFilters));
   $('#mn-search').addEventListener('input', applyFilters);
   await loadRows();
   applyFilters();
+}
+
+/* ========== 退回记录提醒：每次打开系统时检测，有被退回记录即弹窗 ========== */
+async function checkReturnedAndAlert() {
+  if (!state.session || !state.session.user) return;
+  try {
+    const rows = unwrap(await db.from('records').select('id').eq('owner_id', state.session.user.id).eq('status', 'returned').limit(100)) || [];
+    if (!rows.length) return;
+    const mask = document.createElement('div');
+    mask.className = 'modal-mask';
+    mask.innerHTML = `
+      <div class="modal" style="max-width:420px;text-align:left">
+        <h3 style="display:flex;align-items:center;gap:8px"><span class="badge returned">退回提醒</span></h3>
+        <p style="font-size:15px;margin:4px 0 6px">你有 <b style="color:var(--zx-seal);font-size:20px">${rows.length}</b> 条记录被退回</p>
+        <p class="muted">请修改后重新提交，财务会重新审核。</p>
+        <div style="display:flex;gap:10px;margin-top:18px">
+          <button class="btn ghost" id="rt-later" style="flex:1;margin-top:0">知道了</button>
+          <button class="btn" id="rt-go" style="flex:1;margin-top:0">去修改</button>
+        </div>
+      </div>`;
+    document.body.appendChild(mask);
+    $('#rt-later').addEventListener('click', () => mask.remove());
+    $('#rt-go').addEventListener('click', () => { mask.remove(); location.hash = '#/mine?status=returned&all=1'; });
+  } catch (e) { /* 查询失败不打扰正常使用 */ }
 }
 
 /* ========== 审核（财务/管理直接审核） ========== */
