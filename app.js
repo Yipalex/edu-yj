@@ -1559,9 +1559,10 @@ async function renderApprove() {
     });
     $('#ap-count').textContent = `共 ${list.length} 条，已选 ${document.querySelectorAll('.ap-check:checked').length} 条`;
     $('#ap-list').innerHTML = list.length ? list.map((r) => {
-      const eraseBtn = canErase() ? `<button class="btn sm red" data-erase="${r.id}">彻底删除</button>` : '';
+      /* 超管专属（角色判定）：任意状态记录可彻底删除（危险操作，仅超管可见） */
+      const eraseBtn = isSuper() ? `<button class="btn sm red" data-erase="${r.id}">彻底删除</button>` : '';
       /* 超管专属：已核算/已退回记录可回退到待审核（财务误操作时纠正） */
-      const revertBtn = (canErase() && ['accounted', 'returned'].includes(r.status)) ? `<button class="btn sm ghost" data-revert="${r.id}" data-from="${r.status}">回退待审核</button>` : '';
+      const revertBtn = (isSuper() && ['accounted', 'returned'].includes(r.status)) ? `<button class="btn sm ghost" data-revert="${r.id}" data-from="${r.status}">回退待审核</button>` : '';
       if (r.status !== flow.from) return recCard(r, revertBtn + eraseBtn);
       return `
       <div style="display:flex;gap:8px;align-items:flex-start">
