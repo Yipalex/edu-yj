@@ -1,6 +1,12 @@
 /* 教培机构·课时提成智能登记系统 - 核心逻辑 */
 'use strict';
 
+/* 版本自纠：HTML 与 JS 版本不一致（旧缓存混搭）时强制带新参数刷新一次 */
+const APP_VER = '20261102c';
+if (window.__ZX_VER && window.__ZX_VER !== APP_VER && !/__r=/.test(location.search)) {
+  location.replace(location.pathname + '?__r=' + Date.now() + location.hash);
+}
+
 /* ========== 云服务初始化 ========== */
 const cloud = WorkBuddyCloud.createWorkBuddyCloud({
   endpoint: '',
@@ -889,7 +895,8 @@ function timeToMin(t) {
   return p[0] * 60 + p[1];
 }
 /* 同一老师是否存在同日期、时段重叠的已登记课时 */
-/* 登记截止：次月 2 日 00:00 起锁定上月及更早月份；本月可随时登记；上月仅在当月 1 日（含 23:59 前）可补登 */
+/* 新增登记截止：次月 2 日 00:00 起不能再新增上月及更早月份记录；本月可随时新增；
+   上月仅在当月 1 日（含 23:59 前）可补登。此判定只用于【新增】，不约束已退回记录的修改 */
 function isMonthLocked(m) {
   if (!m || !/^\d{4}-\d{2}$/.test(m)) return false;
   const now = new Date();
@@ -1268,9 +1275,10 @@ async function submitRecord(type, editRec) {
     else if (payload.total_perf === null) err = '请填写本月校区总业绩';
   }
   if (err) { toast(err); return; }
-  /* 登记截止：次月 2 日 00:00 起锁定上月及更早月份（仅业务登记类型，财务核算参数除外） */
-  if (type !== 'summary' && isMonthLocked(month)) {
-    toast('该月份已超过登记截止时间（次月 2 日 00:00 起锁定），无法提交或修改');
+  /* 新增登记截止：次月 2 日 00:00 起不能再新增该月及更早月份的记录（仅业务登记类型，财务核算参数除外）。
+     注意：此限制只约束【新增】；已退回记录的修改不受截止限制（财务退回往往发生在截止后，老师仍需能改） */
+  if (!editId && type !== 'summary' && isMonthLocked(month)) {
+    toast('该月份已超过新增登记截止时间（次月 2 日 00:00 起不能新增记录）');
     return;
   }
   /* 课时登记：同一老师不可重复填报时间重叠的课时 */
@@ -1440,8 +1448,9 @@ async function renderMine() {
         actions += `<button class="btn sm ghost" data-del="${r.id}">删除</button>`;
       }
       if (r.type !== 'summary') {
-        if (isMonthLocked(r.month)) actions += `<span class="badge" style="background:#eee;color:#999">已锁定</span>`;
-        else if (r.status === 'returned') actions += `<button class="btn sm ghost" data-edit="${r.id}">补充/编辑</button>`;
+        /* 编辑权限只看审核状态，不受月份截止限制：仅「已退回」可修改（保存后回待审核）；
+           待审核=提交即锁定；已核算=财务定稿不可改 */
+        if (r.status === 'returned') actions += `<button class="btn sm ghost" data-edit="${r.id}">补充/编辑</button>`;
         else if (r.status === 'pending') actions += `<span class="badge" style="background:#fff4e5;color:#e65100">已提交·不可改</span>`;
         else actions += `<span class="badge" style="background:#e8f5e9;color:#2e7d32">已核算·不可改</span>`;
       }
@@ -1559,9 +1568,9 @@ async function renderApprove() {
     });
     $('#ap-count').textContent = `共 ${list.length} 条，已选 ${document.querySelectorAll('.ap-check:checked').length} 条`;
     $('#ap-list').innerHTML = list.length ? list.map((r) => {
-      /* 超管专属（角色判定）：任意状态记录可彻底删除（危险操作，仅超管可见） */
+      /* 超管专属（角色判定，users.role=superadmin）：任意状态记录可彻底删除（危险操作，仅超管可见） */
       const eraseBtn = isSuper() ? `<button class="btn sm red" data-erase="${r.id}">彻底删除</button>` : '';
-      /* 超管专属：已核算/已退回记录可回退到待审核（财务误操作时纠正） */
+      /* 同上：已核算/已退回记录可回退到待审核（财务误操作时纠正） */
       const revertBtn = (isSuper() && ['accounted', 'returned'].includes(r.status)) ? `<button class="btn sm ghost" data-revert="${r.id}" data-from="${r.status}">回退待审核</button>` : '';
       if (r.status !== flow.from) return recCard(r, revertBtn + eraseBtn);
       return `
