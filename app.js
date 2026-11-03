@@ -207,7 +207,7 @@ async function renderMessages() {
       <div class="rmain"><b>${esc(m.title || '')}</b><br>${esc(m.body || '')}</div>
       <div class="rmeta">${fmtDT(m.created_at)}</div>
     </div>`;
-  }).join('') : '<div class="empty">暂无消息<br><span class="muted" style="font-size:12px">学费核算通过、喜报推送结果、记录退回都会在这里通知你</span></div>';
+  }).join('') : '<div class="empty">暂无消息<br><span class="muted" style="font-size:12px">喜报推送结果、记录退回、审核结果都会在这里通知你</span></div>';
   pageShell('消息', html);
 }
 
@@ -1725,7 +1725,7 @@ async function submitRecord(type, editRec) {
         payload, images,
         remark: str('#f-remark') || null,
         ai_raw: form.ai_raw || null,
-      });
+      }).select(); // 带 returning：服务端据此触发喜报登记即推
       toast('已提交，等待财务审核');
     }
     location.hash = '#/mine';
