@@ -1,6 +1,6 @@
 /* SSO_TOKEN_CATCH：接收工作台「切换系统」跳转携带的令牌，写入本地登录态 */
 try { const _ssoTk = new URLSearchParams(location.search).get('tk'); if (_ssoTk) { localStorage.setItem('zb_token', _ssoTk); history.replaceState(null, '', location.pathname + (location.hash || '')); } } catch (_) {}
-/* 教培机构·课时提成智能登记系统 - 核心逻辑 */
+/* 泽曦书画·课时提成智能登记系统 - 核心逻辑 */
 'use strict';
 
 /* 版本自纠：HTML 与 JS 版本不一致（旧缓存混搭）时强制带新参数刷新一次 */
@@ -17,10 +17,10 @@ const cloud = WorkBuddyCloud.createWorkBuddyCloud({
 const db = cloud.database;
 
 /* ========== 常量 ========== */
-const CAMPUSES = ['城东校区', '城西校区', '城南校区', '城北校区', '高新区校区'];
+const CAMPUSES = ['金城校区', '霞山校区', '海东校区', '麻章校区', '开发区校区'];
 const COURSES = ['硬笔书法', '毛笔书法', '美术', '硬笔书法精英班'];
 /* 课后服务地址兜底列表（正式数据在 service_addrs 表，超管在「账号管理」维护；表不可用时用此兜底） */
-const DEFAULT_SERVICE_ADDRS = ['实验小学', '阳光接送园', '博雅学园', '海悦城', '蓝湾雅苑', '翡翠名都', '兴华苑', '启明星', '海滨小学', '育才', '华景新城', '第二中学', '第三小学', '美童堡', '雅正苑', '第八中学', '嘉和苑', '第六小学', '京澜', '师范学校附中', '实验小学分校'];
+const DEFAULT_SERVICE_ADDRS = ['24小', '岭南接送园', '京学', '奥海城', '蓝海峰镜', '御景名城', '兆兴', '布朗之星', '海小', '培才', '华盛新城', '霞山二中', '36小', '美德堡', '国雅', '28中', '嘉庆苑', '33小', '京基', '岭南师范附中', '麻章实验小'];
 const TYPES = {
   course:  { name: '课时打卡',     ico: ZXShell.icon('clock'), desc: '填时间课程+人数' },
   tuition: { name: '学费登记',     ico: ZXShell.icon('coins'), desc: '收据金额提成' },
@@ -42,7 +42,7 @@ function myRole() { return (state.session && state.session.user && state.session
 function canSummary() { return ['principal', 'finance', 'superadmin'].includes(myRole()); }
 function canFinance() { return ['principal', 'finance', 'superadmin'].includes(myRole()); }
 /* 指定超管账号（仅此手机号）：可彻底删除任意记录（含已核算），前后端双重限制 */
-const ERASER_PHONE = '13800000000';
+const ERASER_PHONE = '18507599754';
 function canErase() { return !!(state.session && state.session.user && state.session.user.phone === ERASER_PHONE); }
 
 /* ========== 全局状态 ========== */
@@ -116,12 +116,12 @@ async function logout() {
 
 /* ========== 统一骨架（墨·纸·印 shell） ========== */
 const ZX_SYSTEMS = [
-  { id: 'yj',   name: '业绩登记系统', domain: 'yj.example.com',   color: 'var(--zx-sys-yj)',   url: 'https://yj.example.com/' },
-  { id: 'quan', name: '券类管理系统', domain: 'quan.example.com', color: 'var(--zx-sys-quan)', url: 'https://quan.example.com/' },
-  { id: 'jz',   name: '教资报名系统', domain: 'jz.example.com',   color: 'var(--zx-sys-jz)',   url: 'https://jz.example.com/' },
-  { id: 'sf',   name: '评测报告系统', domain: 'sf.example.com',   color: 'var(--zx-sys-sf)',   url: 'https://sf.example.com/' },
-  { id: 'wms',  name: '仓库管理系统', domain: 'wms.example.com',  color: 'var(--zx-sys-wms)',  url: 'https://wms.example.com/' },
-  { id: 'zc',   name: '固定资产管理', domain: 'zc.example.com',   color: 'var(--zx-sys-zc)',   url: 'https://zc.example.com/' },
+  { id: 'yj',   name: '业绩登记系统', domain: 'yj.zexishuhua.com',   color: 'var(--zx-sys-yj)',   url: 'https://yj.zexishuhua.com/' },
+  { id: 'quan', name: '券类管理系统', domain: 'quan.zexishuhua.com', color: 'var(--zx-sys-quan)', url: 'https://quan.zexishuhua.com/' },
+  { id: 'jz',   name: '教资报名系统', domain: 'jz.zexishuhua.com',   color: 'var(--zx-sys-jz)',   url: 'https://jz.zexishuhua.com/' },
+  { id: 'sf',   name: '评测报告系统', domain: 'sf.zexishuhua.com',   color: 'var(--zx-sys-sf)',   url: 'https://sf.zexishuhua.com/' },
+  { id: 'wms',  name: '仓库管理系统', domain: 'wms.zexishuhua.com',  color: 'var(--zx-sys-wms)',  url: 'https://wms.zexishuhua.com/' },
+  { id: 'zc',   name: '固定资产管理', domain: 'zc.zexishuhua.com',   color: 'var(--zx-sys-zc)',   url: 'https://zc.zexishuhua.com/' },
 ];
 const YJ_NAV = [
   { group: '', items: [
@@ -151,7 +151,7 @@ function ensureShell() {
   if (zxShellReady || !state.profile) return;
   zxShellReady = true;
   ZXShell.init({
-    brand: { name: '教培机构', logo: null },
+    brand: { name: '泽曦工作台', logo: null },
     systems: ZX_SYSTEMS,
     currentSystem: 'yj',
     nav: YJ_NAV,
@@ -262,8 +262,8 @@ function renderLogin(mode) {
   app.innerHTML = `
     <div class="login-hero">
       <div class="seal-mark">泽</div>
-      <h1>教培机构 · 课时提成登记</h1>
-      <p>随手记，不攒到月底。截图 / 说话 / 点几下，都能记。</p>
+      <h1>泽曦工作台</h1>
+      <p>泽曦书画 · 老师中心 —— 随手记，不攒到月底。截图 / 说话 / 点几下，都能记。</p>
     </div>
     <div class="login-form">
       <div class="field">
@@ -720,7 +720,7 @@ async function renderAdmin() {
           : `<span style="display:inline-flex;align-items:center;gap:2px;padding:3px 4px 3px 10px;border:1px solid #d0d0d0;border-radius:14px;font-size:13px;">${esc(a.name)}<button type="button" data-addr-del="${esc(a.id)}" data-addr-name="${esc(a.name)}" title="删除该地址" style="border:none;background:#fdecea;color:#c62828;border-radius:50%;width:18px;height:18px;line-height:16px;cursor:pointer;font-size:13px;padding:0;">×</button></span>`).join('') || '<span class="muted">暂无地址</span>'}
       </div>
       <div style="display:flex;gap:8px;">
-        <input id="addr-new" placeholder="新地址名称，如：实验小学分校" style="flex:1;padding:8px 10px;border:1px solid #d0d0d0;border-radius:8px;font-size:14px;">
+        <input id="addr-new" placeholder="新地址名称，如：麻章实验小" style="flex:1;padding:8px 10px;border:1px solid #d0d0d0;border-radius:8px;font-size:14px;">
         <button class="btn sm" id="addr-add">添加</button>
       </div>
       <p class="muted" style="margin-top:8px;font-size:12px;">「课时打卡」的课后服务下拉选项在此维护，保存后所有教师立即生效；删除只影响新登记，历史记录里已选的地址不受影响。</p>
@@ -863,7 +863,7 @@ const AUDIT_FIELD_NAMES = {
   trial_date: '体验日期', fee_name: '费用名称', phone: '联系电话', assist_for_name: '辅助主教',
 };
 
-/* 记录内容一句话简介：「课时 · 硬笔书法 10-20 19:00-20:30 · 8人 · 城东校区」 */
+/* 记录内容一句话简介：「课时 · 硬笔书法 10-20 19:00-20:30 · 8人 · 金城校区」 */
 function auditRecordBrief(row) {
   if (!row || typeof row !== 'object') return '';
   const p = row.payload || {};
@@ -1429,7 +1429,7 @@ function startVoice(type) {
   mask.className = 'modal-mask';
   mask.innerHTML = `<div class="modal"><h3>语音速记</h3>
     <p class="hint" style="margin-bottom:10px">${SR ? '点「开始说话」，说完后点「停止」，确认文字无误再点「AI 解析填入」。也可以直接打字。' : '当前浏览器不支持语音识别，请直接输入一句话（或用输入法的语音输入）。'}</p>
-    <div class="field"><textarea id="voice-text" placeholder="例如：今晚城东校区硬笔班实到12人，7点半到9点" style="min-height:90px"></textarea></div>
+    <div class="field"><textarea id="voice-text" placeholder="例如：今晚金城校区硬笔班实到12人，7点半到9点" style="min-height:90px"></textarea></div>
     ${SR ? '<button class="btn teal" id="voice-toggle">&#127908; 开始说话</button>' : ''}
     <button class="btn" id="voice-parse">AI 解析填入</button>
     <button class="btn ghost" id="voice-cancel">取消</button></div>`;
