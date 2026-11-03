@@ -52,11 +52,11 @@ function exportFinanceExcel(records, params, month) {
   /* 2. 课时明细 */
   const courseRows = course.map((r) => {
     const d = r.payload;
-    return [r.owner_name, r.campus, d.course || '', d.date || '', `${d.start_time || ''}-${d.end_time || ''}`, d.attend ?? '', d.teach_role || '', d.afterclass || '', d.service_addr || '', STATUS[r.status].name];
+    return [r.owner_name, r.campus, d.course || '', d.date || '', `${d.start_time || ''}-${d.end_time || ''}`, d.attend ?? '', d.teach_role || '', d.afterclass || '', d.service_addr || '', STATUS[r.status].name, r.remark || ''];
   });
   XLSX.utils.book_append_sheet(wb, sheetFrom(courseRows, [
     { label: '教师', w: 12 }, { label: '校区', w: 12 }, { label: '课程', w: 14 },
-    { label: '上课日期', w: 12 }, { label: '时段', w: 14 }, { label: '实到人数', w: 10 }, { label: '主教/助教', w: 10 }, { label: '课后服务', w: 10 }, { label: '课后服务地址', w: 14 }, { label: '状态', w: 12 },
+    { label: '上课日期', w: 12 }, { label: '时段', w: 14 }, { label: '实到人数', w: 10 }, { label: '主教/助教', w: 10 }, { label: '课后服务', w: 10 }, { label: '课后服务地址', w: 14 }, { label: '状态', w: 12 }, { label: '备注', w: 24 },
   ]), '课时明细');
 
   /* 3. 学费提成 */
@@ -65,43 +65,43 @@ function exportFinanceExcel(records, params, month) {
     const pr = params.find((x) => x.member_name === (d.commission_to || r.owner_name)) || {};
     const rate = pr.tuition_rate != null ? Number(pr.tuition_rate) : '';
     const comm = rate === '' ? '' : Number(((Number(d.amount) || 0) * rate).toFixed(2));
-    return [r.campus, d.student || '', d.fee_type || '未填', d.amount ?? '', d.receipt_no || '', d.pay_date || '', r.owner_name, d.commission_to || '', rate === '' ? '' : rate * 100 + '%', comm];
+    return [r.campus, d.student || '', d.fee_type || '未填', d.amount ?? '', d.receipt_no || '', d.pay_date || '', r.owner_name, d.commission_to || '', rate === '' ? '' : rate * 100 + '%', comm, r.remark || ''];
   });
   XLSX.utils.book_append_sheet(wb, sheetFrom(tuitionRows, [
     { label: '校区', w: 12 }, { label: '学生姓名', w: 12 }, { label: '学费类型', w: 10 }, { label: '金额(元)', w: 12 }, { label: '收据编号', w: 14 },
-    { label: '缴费日期', w: 12 }, { label: '经手人', w: 10 }, { label: '提成归属', w: 10 }, { label: '提成比例', w: 10 }, { label: '提成金额(元)', w: 14 },
+    { label: '缴费日期', w: 12 }, { label: '经手人', w: 10 }, { label: '提成归属', w: 10 }, { label: '提成比例', w: 10 }, { label: '提成金额(元)', w: 14 }, { label: '备注', w: 24 },
   ]), '学费提成');
 
   /* 4. 物品销售 */
   const goodsRows = records.filter((r) => r.type === 'goods').map((r) => {
     const d = r.payload;
-    return [r.campus, d.pay_date || '', d.item_name || '', d.barcode || '', d.qty ?? '', d.amount ?? '', d.student || '', r.owner_name, d.teacher || ''];
+    return [r.campus, d.pay_date || '', d.item_name || '', d.barcode || '', d.qty ?? '', d.amount ?? '', d.student || '', r.owner_name, d.teacher || '', r.remark || ''];
   });
   XLSX.utils.book_append_sheet(wb, sheetFrom(goodsRows, [
     { label: '校区', w: 12 }, { label: '日期', w: 12 }, { label: '物品名称', w: 24 }, { label: '条码', w: 12 },
-    { label: '数量', w: 8 }, { label: '金额(元)', w: 12 }, { label: '学生/客户', w: 12 }, { label: '经手人', w: 10 }, { label: '授课教师', w: 10 },
+    { label: '数量', w: 8 }, { label: '金额(元)', w: 12 }, { label: '学生/客户', w: 12 }, { label: '经手人', w: 10 }, { label: '授课教师', w: 10 }, { label: '备注', w: 24 },
   ]), '物品销售');
 
   /* 5. 邀约试听 */
   const inviteRows = records.filter((r) => r.type === 'invite').map((r) => {
     const d = r.payload;
-    return [r.campus, d.trial_date || '', d.student || '', d.amount ?? '', r.owner_name, d.teacher || ''];
+    return [r.campus, d.trial_date || '', d.student || '', d.amount ?? '', r.owner_name, d.teacher || '', r.remark || ''];
   });
   XLSX.utils.book_append_sheet(wb, sheetFrom(inviteRows, [
     { label: '校区', w: 12 }, { label: '体验日期', w: 12 }, { label: '学生姓名', w: 12 },
-    { label: '意向金额(元)', w: 14 }, { label: '经手人', w: 10 }, { label: '体验课老师', w: 12 },
+    { label: '意向金额(元)', w: 14 }, { label: '经手人', w: 10 }, { label: '体验课老师', w: 12 }, { label: '备注', w: 24 },
   ]), '邀约试听');
 
   /* 5.5 其他收入（不计提成业绩） */
   const otherRows = records.filter((r) => r.type === 'other_income').map((r) => {
     const d = r.payload;
-    return [r.campus, d.pay_date || '', d.fee_name || '', d.amount ?? '', d.student || '', d.phone || '', r.owner_name, STATUS[r.status].name];
+    return [r.campus, d.pay_date || '', d.fee_name || '', d.amount ?? '', d.student || '', d.phone || '', r.owner_name, STATUS[r.status].name, r.remark || ''];
   });
   const otherTotal = otherRows.reduce((s, r) => s + (Number(r[3]) || 0), 0);
-  otherRows.push(['合计', '', '', Number(otherTotal.toFixed(2)), '', '', '', '']);
+  otherRows.push(['合计', '', '', Number(otherTotal.toFixed(2)), '', '', '', '', '']);
   XLSX.utils.book_append_sheet(wb, sheetFrom(otherRows, [
     { label: '校区', w: 12 }, { label: '收款日期', w: 12 }, { label: '费用名称', w: 20 }, { label: '金额(元)', w: 12 },
-    { label: '学员姓名', w: 12 }, { label: '联系电话', w: 14 }, { label: '填报人', w: 10 }, { label: '状态', w: 12 },
+    { label: '学员姓名', w: 12 }, { label: '联系电话', w: 14 }, { label: '填报人', w: 10 }, { label: '状态', w: 12 }, { label: '备注', w: 24 },
   ]), '其他收入');
 
   /* 6. 校长月度汇总 */
@@ -114,6 +114,6 @@ function exportFinanceExcel(records, params, month) {
     { label: '月上课总课时', w: 14 }, { label: '主教课时', w: 10 }, { label: '缺勤扣款(元)', w: 12 }, { label: '请假扣款(元)', w: 12 }, { label: '填报人', w: 10 },
   ]), '校长月度汇总');
 
-  XLSX.writeFile(wb, `教培机构_${month}_财务核算.xlsx`);
+  XLSX.writeFile(wb, `泽曦书画_${month}_财务核算.xlsx`);
   toast('Excel 已生成，请在下载目录查看');
 }
