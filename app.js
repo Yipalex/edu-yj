@@ -698,6 +698,7 @@ async function renderAdmin() {
     const stB = u.active ? '<span class="badge accounted">启用</span>' : '<span class="badge returned">已停用</span>';
     const ops = [];
     if (!isMe) {
+      ops.push(`<button class="btn sm" data-act="access" data-id="${esc(u.id)}">系统权限</button>`);
       ops.push(`<button class="btn sm" data-act="reset" data-id="${esc(u.id)}">重置密码</button>`);
       ops.push(u.active
         ? `<button class="btn sm ghost" data-act="disable" data-id="${esc(u.id)}">停用</button>`
@@ -708,7 +709,7 @@ async function renderAdmin() {
     }
     return `<tr>
       <td>${esc(u.phone)}</td><td>${esc(u.name)}</td><td>${roleCell}</td><td>${stB}</td>
-      <td>${fmtDT(u.created_at)}</td><td class="ops">${ops.join(' ')}</td>
+      <td>${fmtDT(u.created_at)}</td><td class="ops" style="min-width:280px;">${ops.join(' ')}</td>
     </tr>`;
   }).join('');
   const html = `
@@ -825,6 +826,7 @@ async function onAdminCreate() {
 }
 
 async function onAdminAct(act, id) {
+  if (act === 'access') return openAccessModal(id);
   try {
     if (act === 'reset') {
       const pwd = prompt('重置该账号初始密码（至少 6 位）');
@@ -845,6 +847,56 @@ async function onAdminAct(act, id) {
     }
     renderAdmin();
   } catch (e) { toast('操作失败：' + e.message); }
+}
+
+/* 系统权限弹窗：勾选可访问的系统并各自设定角色（统一账号体系） */
+async function openAccessModal(id) {
+  let info;
+  try { info = await apiAdmin(`/admin/users/${id}/access`); }
+  catch (e) { toast('读取失败：' + e.message); return; }
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  wrap.innerHTML = `
+    <div style="background:#fff;border-radius:14px;max-width:440px;width:100%;padding:20px;box-shadow:0 10px 40px rgba(0,0,0,.2);">
+      <div style="font-weight:700;font-size:16px;margin-bottom:4px;">系统权限</div>
+      <p class="muted" style="font-size:12px;margin-bottom:14px;line-height:1.6;">勾选后，该账号可用<b>同一手机号+密码</b>登录对应系统；取消勾选即停用其在对应系统的登录（业务数据保留）。角色默认按工作台角色给出，可单独调整。</p>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px;">
+        ${Object.entries(info.systems).map(([key, s]) => `
+          <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #e0dcd4;border-radius:10px;cursor:pointer;">
+            <input type="checkbox" data-sys="${esc(key)}" ${info.access.includes(key) ? 'checked' : ''}>
+            <span style="flex:1;font-size:14px;font-weight:600;">${esc(s.name)}</span>
+            <select data-role="${esc(key)}" style="padding:5px 8px;border:1px solid #d0d0d0;border-radius:8px;font-size:13px;background:#fff;">
+              ${s.roles.map(([k, v]) => `<option value="${esc(k)}" ${(info.roles[key] || info.defaults[key]) === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}
+            </select>
+          </label>`).join('')}
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn ghost" id="acc-cancel">取消</button>
+        <button class="btn primary" id="acc-save">保存</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = () => wrap.remove();
+  wrap.onclick = (e) => { if (e.target === wrap) close(); };
+  $('#acc-cancel').onclick = close;
+  $('#acc-save').onclick = async () => {
+    const access = [], roles = {};
+    wrap.querySelectorAll('[data-sys]').forEach((cb) => {
+      if (cb.checked) {
+        access.push(cb.dataset.sys);
+        roles[cb.dataset.sys] = wrap.querySelector(`[data-role="${cb.dataset.sys}"]`).value;
+      }
+    });
+    try {
+      const r = await apiAdmin(`/admin/users/${id}/access`, { method: 'PUT', json: { access, roles } });
+      const fails = Object.entries(r.results || {}).filter(([, v]) => String(v).startsWith('fail'));
+      close();
+      toast(fails.length
+        ? '已保存，但 ' + fails.map(([s, v]) => info.systems[s].name + '（' + v + '）').join('、') + ' 同步失败，请再试一次'
+        : '已保存，对方可用同一手机号+密码登录所选系统');
+      renderAdmin();
+    } catch (e) { toast('保存失败：' + e.message); }
+  };
 }
 
 /* ========== 操作日志（超管专属）：全量写操作留痕，保留 90 天 ========== */
