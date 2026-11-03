@@ -151,7 +151,7 @@ function ensureShell() {
   if (zxShellReady || !state.profile) return;
   zxShellReady = true;
   ZXShell.init({
-    brand: { name: '泽曦工作台', logo: null },
+    brand: { name: '泽曦工作台', logo: 'img/zexi-logo.png' },
     systems: ZX_SYSTEMS,
     currentSystem: 'yj',
     nav: YJ_NAV,
@@ -261,7 +261,7 @@ function renderLogin(mode) {
   const isReg = mode === 'register';
   app.innerHTML = `
     <div class="login-hero">
-      <div class="seal-mark">泽</div>
+      <img class="seal-mark" src="img/zexi-logo.png" alt="泽曦书画">
       <h1>泽曦工作台</h1>
       <p>泽曦书画 · 老师中心 —— 随手记，不攒到月底。截图 / 说话 / 点几下，都能记。</p>
     </div>
@@ -348,7 +348,7 @@ async function afterLogin() {
 /* ========== 首次登录：完善资料 ========== */
 function renderOnboarding() {
   app.innerHTML = `
-    <div class="login-hero"><div class="seal-mark">泽</div><h1>完善个人信息</h1><p>仅首次登录需要，用于标识你填报的记录</p></div>
+    <div class="login-hero"><img class="seal-mark" src="img/zexi-logo.png" alt="泽曦书画"><h1>完善个人信息</h1><p>仅首次登录需要，用于标识你填报的记录</p></div>
     <div class="login-form">
       <div class="field"><label>姓名 <span class="req">*</span></label>
         <input id="ob-name" placeholder="真实姓名（与工资表一致）"></div>

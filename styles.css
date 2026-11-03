@@ -1,4 +1,4 @@
-/* 教培机构·课时提成智能登记系统 —— 应用层样式（墨·纸·印 统一设计语言）
+/* 泽曦书画·课时提成智能登记系统 —— 应用层样式（墨·纸·印 统一设计语言）
    骨架（顶栏/侧导航/底部标签栏）由 zx/shell 提供，本文件只管业务组件。 */
 * { -webkit-tap-highlight-color: transparent; }
 
@@ -164,10 +164,8 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: var(--zx-fs-body)
 .login-hero { text-align: center; padding: 48px 20px 24px; }
 .login-hero .seal-mark {
   width: 60px; height: 60px; margin: 0 auto;
-  background: var(--zx-seal); border-radius: 14px;
-  display: flex; align-items: center; justify-content: center;
-  font-family: var(--zx-font-display); font-size: 30px; font-weight: 700; color: #F6F3EC;
-  box-shadow: var(--zx-shadow-card);
+  display: block; object-fit: contain;
+  filter: drop-shadow(var(--zx-shadow-card));
 }
 .login-hero .logo { font-size: 44px; }
 .login-hero h1 { font-size: var(--zx-fs-title); font-family: var(--zx-font-display); margin: 12px 0 0; }
