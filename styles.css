@@ -163,9 +163,9 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: var(--zx-fs-body)
 /* ---- 登录 / 首次完善资料 ---- */
 .login-hero { text-align: center; padding: 48px 20px 24px; }
 .login-hero .seal-mark {
-  width: 60px; height: 60px; margin: 0 auto;
+  width: 88px; height: 88px; margin: 0 auto;
   display: block; object-fit: contain;
-  filter: drop-shadow(var(--zx-shadow-card));
+  filter: drop-shadow(0 6px 16px rgba(0, 0, 0, .12));
 }
 .login-hero .logo { font-size: 44px; }
 .login-hero h1 { font-size: var(--zx-fs-title); font-family: var(--zx-font-display); margin: 12px 0 0; }

@@ -52,6 +52,8 @@ const state = {
   teachers: [],   /* 在职教师名单（学费登记「授课老师」下拉，/api/yj/teachers） */
   systemAccess: null, /* 六系统权限缓存（key -> {access, sso, url}），顶栏切换器拦截用 */
   textModel: null, imageModel: null,
+  me: null,       /* 当前登录用户（users 表）：{id, phone, name, role} */
+  avatarUrl: null,/* 当前用户头像地址 */
 };
 
 /* ========== 工具 ========== */
@@ -107,6 +109,17 @@ function pageShell(title, inner, opts = {}) {
     </div>
     <div class="page">${inner}</div>`;
 }
+/** 刷新顶栏/侧栏用户信息（改头像/改名后调用） */
+function refreshShellUser() {
+  if (!window.ZXShell || !zxShellReady) return;
+  ZXShell.setUser({
+    name: (state.me && state.me.name) || (state.profile && state.profile.name) || '',
+    role: ROLES[myRole()] || ROLE_NAMES[state.profile && state.profile.role] || '',
+    roleType: myRole(),
+    avatarUrl: state.avatarUrl,
+  });
+}
+
 async function logout() {
   if (!confirm('确定退出登录？')) return;
   await cloud.auth.signOut();
@@ -130,6 +143,7 @@ const YJ_NAV = [
     { id: 'rank', icon: 'chart', label: '业绩榜单', href: '#/rank' },
     { id: 'switch', icon: 'card', label: '切换系统', href: '#/switch' },
     { id: 'messages', icon: 'bell', label: '消息', href: '#/messages' },
+    { id: 'profile', icon: 'me', label: '个人资料', href: '#/profile' },
   ]},
   { group: '登记', items: [
     { id: 'new-course', icon: 'clock', label: '课时打卡', href: '#/new/course' },
@@ -151,12 +165,18 @@ function ensureShell() {
   if (zxShellReady || !state.profile) return;
   zxShellReady = true;
   ZXShell.init({
-    brand: { name: '泽曦工作台', logo: 'img/zexi-logo.png' },
+    brand: { name: '泽曦工作台', logo: 'img/zexi-logo.png?v=20261104d' },
     systems: ZX_SYSTEMS,
     currentSystem: 'yj',
     nav: YJ_NAV,
     tabbar: ['home', 'mine', 'rank', 'switch', 'messages'],
-    user: { name: state.profile.name, role: ROLES[myRole()] || ROLE_NAMES[state.profile.role] || '', roleType: myRole() },
+    user: {
+      name: state.profile.name,
+      role: ROLES[myRole()] || ROLE_NAMES[state.profile.role] || '',
+      roleType: myRole(),
+      avatarUrl: state.avatarUrl,
+      href: '#/profile',
+    },
     activeNav: '',
     onLogout: logout,
   });
@@ -231,6 +251,7 @@ async function route() {
   if (hash === '#/ai-test') return renderAiTest();
   if (hash === '#/admin') return renderAdmin();
   if (hash === '#/logs') return renderLogs();
+  if (hash === '#/profile') return renderProfile();
   renderHome();
 }
 
@@ -246,6 +267,7 @@ async function boot() {
     } catch (e) { state.profile = null; }
     if (state.profile) {
       loadBaseData(); loadModels(); loadTeachers(); refreshUnread(); loadSystemAccess();
+      loadMe();
       if (!state._unreadTimer) state._unreadTimer = setInterval(refreshUnread, 60_000);
     }
   }
@@ -261,7 +283,7 @@ function renderLogin(mode) {
   const isReg = mode === 'register';
   app.innerHTML = `
     <div class="login-hero">
-      <img class="seal-mark" src="img/zexi-logo.png" alt="泽曦书画">
+      <img class="seal-mark" src="img/zexi-logo.png?v=20261104d" alt="泽曦书画">
       <h1>泽曦工作台</h1>
       <p>泽曦书画 · 老师中心 —— 随手记，不攒到月底。截图 / 说话 / 点几下，都能记。</p>
     </div>
@@ -348,7 +370,7 @@ async function afterLogin() {
 /* ========== 首次登录：完善资料 ========== */
 function renderOnboarding() {
   app.innerHTML = `
-    <div class="login-hero"><img class="seal-mark" src="img/zexi-logo.png" alt="泽曦书画"><h1>完善个人信息</h1><p>仅首次登录需要，用于标识你填报的记录</p></div>
+    <div class="login-hero"><img class="seal-mark" src="img/zexi-logo.png?v=20261104d" alt="泽曦书画"><h1>完善个人信息</h1><p>仅首次登录需要，用于标识你填报的记录</p></div>
     <div class="login-form">
       <div class="field"><label>姓名 <span class="req">*</span></label>
         <input id="ob-name" placeholder="真实姓名（与工资表一致）"></div>
@@ -1892,6 +1914,55 @@ function recBizTime(r) {
   if (r.type === 'invite') return d.trial_date || '';
   return (r.created_at || '').slice(0, 16).replace('T', ' ');
 }
+/* ========== 个人资料（头像 / 姓名 / 手机号 / 密码） ========== */
+/** 拉取当前用户资料（含头像地址） */
+async function loadMe() {
+  try {
+    const token = localStorage.getItem('zb_token');
+    const r = await fetch('/api/yj/auth/profile', { headers: { Authorization: 'Bearer ' + token } });
+    const d = await r.json();
+    if (d && d.user) {
+      state.me = d.user;
+      state.avatarUrl = d.user.avatar_url || null;
+      refreshShellUser();
+    }
+  } catch (e) { /* 忽略 */ }
+}
+
+async function renderProfile() {
+  pageShell('个人资料', '<div class="loading-box">加载中…</div>', { tab: 'profile' });
+  const token = localStorage.getItem('zb_token');
+  let prof = null;
+  try {
+    const r = await fetch('/api/yj/auth/profile', { headers: { Authorization: 'Bearer ' + token } });
+    const d = await r.json();
+    if (d && d.user) prof = d.user;
+  } catch (e) { /* 忽略，走兜底 */ }
+  const me = prof || state.me || { id: (state.session && state.session.user && state.session.user.id) || '', phone: '', name: (state.profile && state.profile.name) || '' };
+  state.me = me;
+  state.avatarUrl = me.avatar_url || null;
+
+  const root = document.createElement('div');
+  pageShell('个人资料', '<div id="zxProfileRoot"></div>', { tab: 'profile' });
+  const holder = document.getElementById('zxProfileRoot');
+  ZXProfile.render(holder, {
+    app: 'yj',
+    token: () => localStorage.getItem('zb_token'),
+    userId: () => (state.me && state.me.id) || (state.session && state.session.user && state.session.user.id),
+    name: () => (state.me && state.me.name) || (state.profile && state.profile.name) || '',
+    phone: () => (state.me && state.me.phone) || '',
+    roleLabel: () => (ROLE_NAMES[myRole()] || ROLE_NAMES[state.profile && state.profile.role] || '员工'),
+    onSaved: (u) => {
+      if (u) {
+        state.me = { ...(state.me || {}), ...u };
+        if (state.profile && u.name) state.profile.name = u.name;
+      }
+      refreshShellUser();
+    },
+    onAvatar: () => refreshShellUser(),
+  });
+}
+
 const APPROVE_FLOW = {
   finance: { from: 'pending', pass: 'accounted', passLabel: '审核通过' },
   leader:  { from: 'pending', pass: 'accounted', passLabel: '审核通过' },
