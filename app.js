@@ -871,11 +871,16 @@ async function onAdminAct(act, id) {
   } catch (e) { toast('操作失败：' + e.message); }
 }
 
-/* 系统权限弹窗：勾选可访问的系统并各自设定角色（统一账号体系） */
+/* 系统权限弹窗：勾选可访问的系统并各自设定角色（统一账号体系）
+   WMS 仓库系统选「教师」时，需同时选择所属校区（决定该教师能看到哪个校区的库存） */
 async function openAccessModal(id) {
   let info;
   try { info = await apiAdmin(`/admin/users/${id}/access`); }
   catch (e) { toast('读取失败：' + e.message); return; }
+  // WMS 校区列表（读取失败不阻断，只是校区下拉为空）
+  let wmsLocations = [];
+  try { wmsLocations = (await apiAdmin('/admin/wms-locations')).locations || []; }
+  catch { /* WMS 未配置等场景 */ }
   const wrap = document.createElement('div');
   wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;';
   wrap.innerHTML = `
@@ -884,13 +889,21 @@ async function openAccessModal(id) {
       <p class="muted" style="font-size:12px;margin-bottom:14px;line-height:1.6;">勾选后，该账号可用<b>同一手机号+密码</b>登录对应系统；取消勾选即停用其在对应系统的登录（业务数据保留）。角色默认按工作台角色给出，可单独调整。</p>
       <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px;">
         ${Object.entries(info.systems).map(([key, s]) => `
-          <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #e0dcd4;border-radius:10px;cursor:pointer;">
-            <input type="checkbox" data-sys="${esc(key)}" ${info.access.includes(key) ? 'checked' : ''}>
-            <span style="flex:1;font-size:14px;font-weight:600;">${esc(s.name)}</span>
-            <select data-role="${esc(key)}" style="padding:5px 8px;border:1px solid #d0d0d0;border-radius:8px;font-size:13px;background:#fff;">
-              ${s.roles.map(([k, v]) => `<option value="${esc(k)}" ${(info.roles[key] || info.defaults[key]) === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}
+          <div style="display:flex;flex-direction:column;gap:8px;padding:10px 12px;border:1px solid #e0dcd4;border-radius:10px;">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+              <input type="checkbox" data-sys="${esc(key)}" ${info.access.includes(key) ? 'checked' : ''}>
+              <span style="flex:1;font-size:14px;font-weight:600;">${esc(s.name)}</span>
+              <select data-role="${esc(key)}" style="padding:5px 8px;border:1px solid #d0d0d0;border-radius:8px;font-size:13px;background:#fff;">
+                ${s.roles.map(([k, v]) => `<option value="${esc(k)}" ${(info.roles[key] || info.defaults[key]) === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}
+              </select>
+            </label>
+            ${key === 'wms' ? `
+            <select data-campus="wms" style="display:none;padding:5px 8px;border:1px solid #d0d0d0;border-radius:8px;font-size:13px;background:#fff;width:100%;">
+              <option value="">选择所属校区（教师角色必填）</option>
+              ${wmsLocations.map((l) => `<option value="${l.id}" ${(info.campuses || {}).wms === l.id ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}
             </select>
-          </label>`).join('')}
+            <div data-campus-tip="wms" style="display:none;font-size:12px;color:#8a847b;line-height:1.5;">教师角色只能看到所选校区的库存数量与建议售价，只能进行出库、入库、退库操作。</div>` : ''}
+          </div>`).join('')}
       </div>
       <div style="display:flex;gap:10px;justify-content:flex-end;">
         <button class="btn ghost" id="acc-cancel">取消</button>
@@ -901,16 +914,35 @@ async function openAccessModal(id) {
   const close = () => wrap.remove();
   wrap.onclick = (e) => { if (e.target === wrap) close(); };
   $('#acc-cancel').onclick = close;
+  // WMS 教师角色 → 显示校区选择
+  const syncCampusUI = () => {
+    const cb = wrap.querySelector('[data-sys="wms"]');
+    const roleSel = wrap.querySelector('[data-role="wms"]');
+    const campusSel = wrap.querySelector('[data-campus="wms"]');
+    const tip = wrap.querySelector('[data-campus-tip="wms"]');
+    if (!cb || !roleSel || !campusSel) return;
+    const show = cb.checked && roleSel.value === 'teacher';
+    campusSel.style.display = show ? 'block' : 'none';
+    if (tip) tip.style.display = show ? 'block' : 'none';
+  };
+  wrap.querySelectorAll('[data-sys]').forEach((cb) => cb.addEventListener('change', syncCampusUI));
+  wrap.querySelectorAll('[data-role]').forEach((sel) => sel.addEventListener('change', syncCampusUI));
+  syncCampusUI();
   $('#acc-save').onclick = async () => {
-    const access = [], roles = {};
+    const access = [], roles = {}, campuses = {};
     wrap.querySelectorAll('[data-sys]').forEach((cb) => {
       if (cb.checked) {
         access.push(cb.dataset.sys);
         roles[cb.dataset.sys] = wrap.querySelector(`[data-role="${cb.dataset.sys}"]`).value;
+        const campusSel = wrap.querySelector(`[data-campus="${cb.dataset.sys}"]`);
+        if (campusSel && campusSel.style.display !== 'none') {
+          if (!campusSel.value) { toast('请选择教师在仓库管理系统的所属校区'); return; }
+          campuses[cb.dataset.sys] = Number(campusSel.value);
+        }
       }
     });
     try {
-      const r = await apiAdmin(`/admin/users/${id}/access`, { method: 'PUT', json: { access, roles } });
+      const r = await apiAdmin(`/admin/users/${id}/access`, { method: 'PUT', json: { access, roles, campuses } });
       const fails = Object.entries(r.results || {}).filter(([, v]) => String(v).startsWith('fail'));
       close();
       toast(fails.length
