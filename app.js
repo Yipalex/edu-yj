@@ -1148,6 +1148,8 @@ function renderNew(type, record) {
       const wrap = $('#f-addr-wrap');
       const isYes = afterclass.value === '是';
       wrap.style.display = isYes ? '' : 'none';
+      const cw = $('#f-campus-wrap');
+      if (cw) cw.style.display = isYes ? 'none' : ''; // 课后服务无需填校区（需求 2026-11-06）
       if (!isYes) { const a = $('#f-addr'); if (a) a.value = ''; }
     };
     afterclass.addEventListener('change', toggleAddr);
@@ -1189,7 +1191,7 @@ function buildFields(type, p) {
         </select></div>
       <div class="field"><label>主教/助教</label><div class="seg" id="f-teachrole">
         <button type="button" data-v="主教" class="on">主教</button><button type="button" data-v="助教">助教</button></div></div>
-      <div class="field"><label>校区</label><select id="f-campus">${campusOpts}</select></div>`;
+      <div class="field" id="f-campus-wrap"><label>校区</label><select id="f-campus">${campusOpts}</select></div>`;
   }
   if (type === 'tuition') {
     const teacherOpts = state.teachers.length
@@ -1349,8 +1351,9 @@ async function findTimeConflict(date, start, end, excludeId) {
 /* 拼课规则：有效主教状态（已退回的不占用主教名额） */
 const LEAD_ACTIVE_STATUSES = ['pending', 'accounted'];
 
-/* 查同月份全部老师的课时记录中，与给定 日期/时段/校区 重叠的记录（拼课校验用，excludeId 为编辑中的记录自身） */
-async function findCourseMates(date, start, end, campus, excludeId) {
+/* 查同月份全部老师的课时记录中，与给定 日期/时段/地点 重叠的记录（拼课校验用，excludeId 为编辑中的记录自身）。
+   普通课按校区分组；课后服务课（afterclass=是）按课后服务地址分组（校区留空，2026-11-06 需求） */
+async function findCourseMates(date, start, end, campus, excludeId, serviceAddr) {
   if (!date || !state.session || !state.session.user) return [];
   const s = timeToMin(start), e = timeToMin(end);
   if (isNaN(s) || isNaN(e)) return [];
@@ -1360,8 +1363,14 @@ async function findCourseMates(date, start, end, campus, excludeId) {
   } catch (e2) { return []; }
   return rows.filter((r) => {
     if (excludeId && String(r.id) === String(excludeId)) return false;
-    if ((r.campus || '') !== campus) return false;
     const d = r.payload || {};
+    if (d.afterclass === '是') {
+      if (!serviceAddr) return false;            // 普通课不与服务课互相占用
+      if ((d.service_addr || '') !== serviceAddr) return false;
+    } else {
+      if (serviceAddr) return false;             // 服务课不与普通课互相占用
+      if ((r.campus || '') !== campus) return false;
+    }
     if (d.date !== date) return false;
     const ds = timeToMin(d.start_time), de = timeToMin(d.end_time);
     if (isNaN(ds) || isNaN(de)) return false;
@@ -1382,16 +1391,15 @@ function pickAssistLead(leads, currentLeadId) {
     }).join('');
     mask.innerHTML = `<div class="modal"><h3>选择本节课的主教</h3>
       <div class="hint" style="margin-bottom:10px">拼课助教需关联主教课程，财务按主教/助教分别核算课时费。</div>
-      ${items || '<div class="empty">该时段同校区暂无其他老师登记的主教课程</div>'}
+      ${items || '<div class="empty">该时段暂无主教登记的课程</div>'}
       <div style="display:flex;gap:8px;margin-top:14px">
-        <button class="btn" id="assist-ok" style="flex:1">${leads.length ? '确认关联并提交' : '仍要提交（待关联主教）'}</button>
+        <button class="btn" id="assist-ok" style="flex:1">确认关联并提交</button>
         <button class="btn ghost" id="assist-cancel">取消</button>
       </div></div>`;
     document.body.appendChild(mask);
     const done = (v) => { mask.remove(); resolve(v); };
     mask.querySelector('#assist-cancel').addEventListener('click', () => done({ cancel: true }));
     mask.querySelector('#assist-ok').addEventListener('click', () => {
-      if (!leads.length) return done({ lead: null });
       const sel = mask.querySelector('input[name="assist-lead"]:checked');
       if (!sel) { toast('请选择主教课程，或点「取消」'); return; }
       const lead = leads.find((l) => String(l.id) === sel.value);
@@ -1653,11 +1661,13 @@ async function submitRecord(type, editRec) {
   const num = (id) => { const v = $(id) ? $(id).value : ''; return v === '' ? null : Number(v); };
   const str = (id) => ($(id) ? $(id).value.trim() : '');
   let payload = {}, month = null, err = '';
+  let courseCampus = null; // 课时登记的校区（课后服务课为空串，需求 2026-11-06）
   if (type === 'course') {
     let course = segVal('#f-course');
     if (course === '_other') course = str('#f-course-other');
     const afterclass = str('#f-afterclass');
     const addr = afterclass === '是' ? str('#f-addr') : '';
+    courseCampus = afterclass === '是' ? '' : (str('#f-campus') || p.campus);
     payload = { course, date: str('#f-date'), start_time: str('#f-start'), end_time: str('#f-end'), attend: num('#f-attend'), teach_role: segVal('#f-teachrole'), afterclass, service_addr: addr };
     month = payload.date ? payload.date.slice(0, 7) : null;
     if (!course) err = '请选择或填写课程名称';
@@ -1722,22 +1732,35 @@ async function submitRecord(type, editRec) {
       return;
     }
   }
-  /* 拼课规则：同一时段同一校区只能有一名有效主教（已退回不算）；助教需关联主教课程，无主教的课可先提交、由财务审核时核对 */
+  /* 拼课规则（2026-11-06 收紧）：同一时段同一地点只能有一名有效主教（已退回不算）；
+     助教必须先有主教登记才能提交，且实到人数必须与主教一致 */
   if (type === 'course') {
-    const campusVal = str('#f-campus') || p.campus;
-    const mates = await findCourseMates(payload.date, payload.start_time, payload.end_time, campusVal, editId);
+    const isAfter = payload.afterclass === '是';
+    const campusVal = courseCampus;
+    const addrVal = isAfter ? (payload.service_addr || '') : '';
+    const placeTxt = isAfter ? `课后服务「${addrVal}」` : campusVal;
+    const mates = await findCourseMates(payload.date, payload.start_time, payload.end_time, campusVal, editId, addrVal);
     const activeLeads = mates.filter((m) => (m.payload || {}).teach_role === '主教' && LEAD_ACTIVE_STATUSES.includes(m.status));
     if (payload.teach_role === '主教') {
       delete payload.assist_for; delete payload.assist_for_name;
       if (activeLeads.length) {
         const l = activeLeads[0]; const ld = l.payload || {};
-        toast(`该时段 ${campusVal} 已有主教「${l.owner_name || ''}」（${ld.course || ''} ${ld.start_time || ''}-${ld.end_time || ''}），拼课请改选「助教」`);
+        toast(`该时段 ${placeTxt} 已有主教「${l.owner_name || ''}」（${ld.course || ''} ${ld.start_time || ''}-${ld.end_time || ''}），拼课请改选「助教」`);
         return;
       }
     } else if (payload.teach_role === '助教') {
+      if (!activeLeads.length) {
+        toast('该时间段课次主教没有登记，请先联系主教登记，才可以提交');
+        return;
+      }
       const choice = await pickAssistLead(activeLeads, editRec && editRec.payload && editRec.payload.assist_for);
       if (choice.cancel) return;
       if (choice.lead) {
+        const leadAttend = Number((choice.lead.payload || {}).attend);
+        if (Number.isFinite(leadAttend) && payload.attend !== null && leadAttend !== Number(payload.attend)) {
+          toast(`与主教登记人数不相符（主教 ${leadAttend} 人 / 助教 ${payload.attend} 人），请联系主教核对人数后再提交`);
+          return;
+        }
         payload.assist_for = choice.lead.id;
         payload.assist_for_name = choice.lead.owner_name;
       } else {
@@ -1762,7 +1785,7 @@ async function submitRecord(type, editRec) {
         btn.disabled = false; btn.textContent = '保存';
         return;
       }
-      const upd = { payload, month, campus: str('#f-campus') || p.campus, remark: str('#f-remark') || null, updated_at: new Date().toISOString() };
+      const upd = { payload, month, campus: type === 'course' ? courseCampus : (str('#f-campus') || p.campus), remark: str('#f-remark') || null, updated_at: new Date().toISOString() };
       // 已退回记录修改后重新进入待审核队列，并清除退回原因备注
       upd.status = 'pending';
       if (upd.remark && upd.remark.indexOf('退回原因：') === 0) upd.remark = null;
@@ -1775,7 +1798,7 @@ async function submitRecord(type, editRec) {
     } else {
       await db.from('records').insert({
         owner_name: p.name,
-        type, campus: str('#f-campus') || p.campus, month,
+        type, campus: type === 'course' ? courseCampus : (str('#f-campus') || p.campus), month,
         payload, images,
         remark: str('#f-remark') || null,
         ai_raw: form.ai_raw || null,
@@ -1799,7 +1822,7 @@ function recMain(r) {
         ? `助教（辅助 <b>${esc(d.assist_for_name)}</b> 主教）`
         : '<span class="badge warn">助教 · 待关联主教</span>';
     }
-    return `${esc(d.course || '')} ${esc(d.date || '')} ${esc(d.start_time || '')}-${esc(d.end_time || '')}<br>实到 <b>${d.attend ?? '-'}</b> 人 · ${roleTxt} · 课后服务：${esc(d.afterclass || '未填')}${d.service_addr ? ' · ' + esc(d.service_addr) : ''}`;
+    return `${esc(d.course || '')} ${esc(d.date || '')} ${esc(d.start_time || '')}-${esc(d.end_time || '')}<br>实到 <b>${d.attend ?? '-'}</b> 人 · ${roleTxt} · 课后服务：${esc(d.afterclass || '未填')}${d.service_addr ? ' · ' + esc(d.service_addr) : ''}<span class="mate-line" style="display:block;font-size:12px;color:#8a6d3b;margin-top:2px" data-mate-for="${r.id}" data-mate-month="${esc(r.month || '')}"></span>`;
   }
   if (r.type === 'tuition') return `学生：${esc(d.student || '')} · <b>¥${d.amount ?? '-'}</b>${d.fee_type ? ' · ' + esc(d.fee_type) : ''}${d.course_type ? ' · ' + esc(d.course_type) : ''}<br>缴费 ${esc(d.pay_date || '')} · 收据 ${esc(d.receipt_no || '无')}<br>授课 ${esc(d.teacher || '未填')} · 跟进老师（提成归属） ${esc(d.commission_to || '')}${d.source ? '<br>成交来源：' + esc(d.source) : ''}${d.typenote ? '<br>类型（喜报）：' + esc(d.typenote) : ''}`;
   if (r.type === 'goods') return `物品：${esc(d.item_name || '')} × ${d.qty ?? '-'} · <b>¥${d.amount ?? '-'}</b><br>缴费 ${esc(d.pay_date || '')}${d.student ? ' · ' + esc(d.student) : ''}`;
@@ -1827,6 +1850,46 @@ async function viewImage(path) {
     if (url) window.open(url, '_blank');
     else toast('凭证加载失败');
   } catch (e) { toast('凭证加载失败：' + (e.message || '')); }
+}
+
+/* 拼课互相可见（2026-11-06）：卡片渲染后异步补全主教/助教姓名与双方实到人数。
+   主教卡片显示关联的助教及人数；助教卡片显示所辅助的主教及人数 */
+async function decorateCourseMates() {
+  const slots = Array.from(document.querySelectorAll('[data-mate-for]'));
+  if (!slots.length) return;
+  const byMonth = {};
+  slots.forEach((s) => { const m = s.dataset.mateMonth || ''; (byMonth[m] = byMonth[m] || []).push(s); });
+  await Promise.all(Object.entries(byMonth).map(async ([month, monthSlots]) => {
+    let rows = [];
+    try {
+      let q = db.from('records').select('*').eq('type', 'course').limit(5000);
+      if (month) q = q.eq('month', month);
+      rows = unwrap(await q) || [];
+    } catch (e) { return; }
+    const byId = {};
+    rows.forEach((r) => { byId[String(r.id)] = r; });
+    monthSlots.forEach((slot) => {
+      const rec = byId[String(slot.dataset.mateFor)];
+      if (!rec) return;
+      const d = rec.payload || {};
+      const parts = [];
+      if (d.teach_role === '主教') {
+        rows.filter((x) => String((x.payload || {}).assist_for) === String(rec.id))
+          .forEach((a) => {
+            const ad = a.payload || {};
+            const st = LEAD_ACTIVE_STATUSES.includes(a.status) ? '' : `（${((STATUS[a.status] || {}).name) || a.status}）`;
+            parts.push(`助教 ${esc(a.owner_name || '')} 实到 ${ad.attend ?? '-'} 人${st}`);
+          });
+      } else if (d.teach_role === '助教' && d.assist_for) {
+        const lead = byId[String(d.assist_for)];
+        if (lead) {
+          const ld = lead.payload || {};
+          parts.push(`主教 ${esc(lead.owner_name || '')} 实到 ${ld.attend ?? '-'} 人`);
+        }
+      }
+      slot.textContent = parts.join(' · ');
+    });
+  }));
 }
 
 /* ========== 我的记录 ========== */
@@ -1902,6 +1965,7 @@ async function renderMine(hash) {
       return recCard(r, actions);
     }).join('') : '<div class="empty">没有匹配的记录</div>';
     bindActions();
+    decorateCourseMates();
   };
   pageShell('我的记录', filterBar, { tab: 'mine' });
   if (initStatus) $('#mn-status').value = initStatus;
@@ -2104,6 +2168,7 @@ async function renderApprove() {
       : '<div class="empty">没有匹配筛选条件的记录</div>';
     $('#ap-all').checked = false;
     bindActions();
+    decorateCourseMates();
   };
   const refreshCount = () => {
     $('#ap-count').textContent = `共 ${document.querySelectorAll('#ap-list .rec').length} 条，已选 ${document.querySelectorAll('.ap-check:checked').length} 条`;
